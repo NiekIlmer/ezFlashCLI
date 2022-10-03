@@ -181,6 +181,11 @@ class da14xxx:
         logging.error("OTP not implemented for this device")
         sys.exit(1)
 
+    def otp_read_raw(self, address, length):
+        """Fallback function for OTP read raw."""
+        logging.error("OTP read not implemented for this device")
+        sys.exit(1)
+
 
 class da1453x_da1458x(da14xxx):
     """Derived class for the DA145xx and DA1458xx devices."""
@@ -227,6 +232,14 @@ class da1453x_da1458x(da14xxx):
             a = a >> 1
         return shift
 
+    def shift32(self, a):
+        """Shit function."""
+        shift = 0
+        while not (a & 0x1):
+            shift += 1
+            a = a >> 1
+        return shift
+
     def SetWord16(self, addr, data):
         """Write a 16 bits word."""
         self.link.wr_mem(16, addr, data)
@@ -237,6 +250,13 @@ class da1453x_da1458x(da14xxx):
         reg = (reg & (~bitfield_mask)) & 0xFFFF
         wr_data = reg | (data << (self.shift16(bitfield_mask)))
         self.link.wr_mem(16, addr, wr_data)
+
+    def SetBits32(self, addr, bitfield_mask, data):
+        """Set a 32 bits word according to the mask."""
+        reg = self.link.rd_mem(32, addr, 1)[0]
+        reg = (reg & (~bitfield_mask)) & 0xFFFFFFFF
+        wr_data = reg | (data << (self.shift32(bitfield_mask)))
+        self.link.wr_mem(32, addr, wr_data)
 
     def GPIO_SetPinFunction(self, port, pin, mode, function):
         """Set GPIO Pin function."""
@@ -685,7 +705,7 @@ class da14531(da1453x_da1458x):
 
         # Default timings
         self.link.wr_mem(32, self.OTPC_TIM1_REG, self.OTPC_TIM1_REG_RESET)
-        self.link.wr_mem(32, self.OTPC_TIM2_REG, self.OTPC_TIM1_REG_RESET)
+        self.link.wr_mem(32, self.OTPC_TIM2_REG, self.OTPC_TIM2_REG_RESET)
 
     def otp_blank_check(self):
         """Check if the program area of OTP is blank."""
@@ -781,6 +801,33 @@ class da14585(da1453x_da1458x):
     SPI_RX_TX_REG0 = 0x50001202
     SPI_CLEAR_INT = 0x50001206
 
+    OTPC_MODE_REG = 0x07F40000
+    OTPC_PCTRL_REG = 0x07F40004
+    OTPC_STAT_REG = 0x07F40008
+    OTPC_TIM1_REG = 0x07F40028
+    OTPC_TIM2_REG = 0x07F4002C
+    OTPC_NWORDS_REG = 0x07F40014
+
+    OTPC_MODE_STBY = 0
+    OTPC_MODE_MREAD = 1
+    OTPC_MODE_MPROG = 2
+    OTPC_MODE_AREAD = 3
+    OTPC_MODE_APROG = 4
+    OTPC_MODE_TBLANK = 5
+    OTPC_MODE_TDEC = 6
+    OTPC_MODE_TWR = 7
+
+    OTPC_NWORDS_REG_RESET = 0x00000000
+    OTPC_TIM1_REG_RESET = 0x1A104F20
+    OTPC_TIM2_REG_RESET = 0x00010000
+    OTP_START = 0x07F80000
+    OTP_HEADER_START = 0x07F8FE00
+    OTP_SIZE = 0x10000
+    OTP_CELL_SIZE = 0x08
+    OTP_HEADER_SIZE = OTP_SIZE - (OTP_HEADER_START - OTP_START)
+    OTP_CELL_NUM = int(OTP_SIZE / OTP_CELL_SIZE)  # Maximum number of OTP cells
+    OTP_HEADER_CELL_NUM = int(OTP_HEADER_SIZE / OTP_CELL_SIZE)
+
     def __init__(self, device=None):
         """Initalizate the da14xxxx parent devices class."""
         da1453x_da1458x.__init__(self, b"DA14585")
@@ -842,6 +889,67 @@ class da14585(da1453x_da1458x):
 
         # Set SPI Word length
         self.spi_set_bitmode(self.SPI_MODE_8BIT)
+
+    def otp_set_mode(self, mode):
+        """Move the OTPC in new mode."""
+        self.SetBits32(self.OTPC_MODE_REG, 0x07, mode)
+
+    def otp_init(self):
+        """Init the OTP controller."""
+        self.SetBits16(self.SYS_CTRL_REG, 0x0040, 0x1)  # Put OTP controller in reset
+        self.SetBits16(
+            self.SYS_CTRL_REG, 0x0040, 0x0
+        )  # Take the OTP controller out of reset
+
+        # Default timings
+        self.link.wr_mem(32, self.OTPC_NWORDS_REG, self.OTPC_NWORDS_REG_RESET)
+        self.link.wr_mem(32, self.OTPC_TIM1_REG, self.OTPC_TIM1_REG_RESET)
+        self.link.wr_mem(32, self.OTPC_TIM2_REG, self.OTPC_TIM2_REG_RESET)
+
+        self.SetBits16(self.CLK_AMBA_REG, 0x0080, 0x1)  # Enable OTPC clock
+
+        # Mode to standby
+        self.otp_set_mode(self.OTPC_MODE_STBY)
+
+    def otp_blank_check(self):
+        """Check if the program area of OTP is blank."""
+        self.otp_init()
+        self.otp_set_mode(self.OTPC_MODE_MREAD)
+        otp_contents = self.link.rd_mem(32, self.OTP_START, self.OTP_CELL_NUM * 2)
+        otp_blank = True
+        header_blank = True
+        for entry in range(self.OTP_CELL_NUM * 2 - self.OTP_HEADER_CELL_NUM * 2):
+            if otp_contents[entry]:
+                otp_blank = False
+                break
+        for entry in range(
+            self.OTP_CELL_NUM - self.OTP_HEADER_CELL_NUM * 2, self.OTP_CELL_NUM * 2
+        ):
+            if otp_contents[entry]:
+                header_blank = False
+                break
+        if header_blank is True:
+            logging.error(
+                "The OTP header is blank, this shouldn't be possible. Please ensure the connection to the chip is correct"
+            )
+        return otp_blank
+
+    def otp_read_raw(self, address, length=1):
+        """Check if the program area of OTP is blank."""
+        if address < 0:
+            logging.error("Address can't be negative")
+            return 0
+        if (
+            address >= self.OTP_SIZE and address < self.OTP_START
+        ) or address >= self.OTP_SIZE + self.OTP_START:
+            logging.error("Address out of range")
+            return 0
+        if address < self.OTP_SIZE:
+            address += self.OTP_START
+        self.otp_init()
+        self.otp_set_mode(self.OTPC_MODE_MREAD)
+
+        return self.link.rd_mem(8, address, length)
 
 
 class da1468x_da1469x_da1470x(da14xxx):
