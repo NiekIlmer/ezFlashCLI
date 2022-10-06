@@ -23,9 +23,12 @@
 
 
 import argparse
+import datetime
 import json
 import logging
 import os
+import shelve
+import subprocess
 import sys
 
 import ezFlashCLI.ezFlash.smartbond.smartbondDevices as sbdev
@@ -60,6 +63,45 @@ class ezFlashCLI:
             logging.basicConfig(level=logging.INFO)
 
         logging.info("{} v{}".format(self.__class__.__name__, __version__))
+
+        with shelve.open(
+            "persistentValues", "c", writeback=True
+        ) as shelf:  # Open the shelf with persistent values
+            last_check = None
+            if (
+                "last_check" in shelf
+            ):  # Check to see if the key exists (It won't on the first run)
+                last_check = shelf["last_check"]
+            now = datetime.datetime.now()
+            if last_check is None or now > last_check + datetime.timedelta(
+                hours=1
+            ):  # Only check once every hour, it takes a few seconds
+                shelf["last_check"] = now
+                shelf["last_result"] = self.checkLatestVersion(shelf)
+            last_result = shelf["last_result"]
+            if last_result is False:
+                current_version = str(
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "show", "ezFlashCLI"],
+                        capture_output=True,
+                        text=True,
+                    )
+                )
+                current_version = current_version[
+                    current_version.find("Version:") + 8 :
+                ]
+                current_version = current_version[
+                    : current_version.find("\\n")
+                ].replace(" ", "")
+                if shelf["latest_version"] == current_version:
+                    shelf["last_result"] = True
+                else:
+                    logging.warning(
+                        "You are not using the latest version of ezFlashCLI"
+                    )
+                    logging.warning("To upgrade run: pip install --upgrade ezFlashCLI")
+            shelf.close()
+
         logging.info("By using the program you accept the SEGGER J-link™ license")
 
         # list the jlink interfaces
@@ -396,6 +438,48 @@ class ezFlashCLI:
         else:
             self.parser.print_help(sys.stderr)
         sys.exit(0)
+
+    def checkLatestVersion(self, shelf):
+        """
+        Check if there is a new version of ezFlashCLI available.
+
+        Args:
+            shelf: a shelf item to store the version information
+        """
+        latest_version = str(
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "{}==random".format("ezFlashCLI"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+        )
+        latest_version = latest_version[latest_version.find("(from versions:") + 15 :]
+        latest_version = latest_version[: latest_version.find(")")]
+        latest_version = latest_version.replace(" ", "").split(",")[-1]
+
+        current_version = str(
+            subprocess.run(
+                [sys.executable, "-m", "pip", "show", "ezFlashCLI"],
+                capture_output=True,
+                text=True,
+            )
+        )
+        current_version = current_version[current_version.find("Version:") + 8 :]
+        current_version = current_version[: current_version.find("\\n")].replace(
+            " ", ""
+        )
+        shelf["current_version"] = current_version
+        shelf["latest_version"] = latest_version
+        if latest_version == current_version:
+            return True
+        else:
+            return False
 
     def importAndAssignDevice(self, device):
         """Import the device from the database.
