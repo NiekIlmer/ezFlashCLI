@@ -316,6 +316,7 @@ class pyjlink(object):
             try:
                 self.logger.debug("Read " + device.pretty_identifier + " identifier")
                 id = self.rd_mem(device.access_size, device.id_register, device.id_size)
+                self.logger.debug("Result: " + str(id))
                 if str(id) == device.id:
                     "Extra info deals with the 531_01 rom spin"
                     if len(device.extra_info) > 0:
