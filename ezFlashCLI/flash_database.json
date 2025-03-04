@@ -1,7 +1,7 @@
 {
     "date": "1566474590175",
     "flash_configurations": [{
-            "name": "DA14592_eflash",
+            "name": "DA1459x_eflash",
             "flash_manufacturer": "1",
             "flash_device_type": "2",
             "flash_density": "3",
