@@ -1988,6 +1988,14 @@ class da14592(da1469x):
         _592_DEFAULT_IMAGE_OFFSET = 0x400
         if fileData[:4] == b"\xA5\xA5\xA5\xA5":
             logging.info("[DA14592] Program image")
+            self.link.reset()
+            self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
+            self.link.wr_mem(
+                16,
+                self.SYS_CTRL_REG,
+                self.SYS_CTRL_REG_RESET_VAL | self.SYS_CTRL_REG_SW_RESET_MSK,
+            )
+            self.link.reset()
             self.flash_program_data(fileData, 0x0)
         else:
             if fileData[:2] != b"Qq":
@@ -2032,6 +2040,14 @@ class da14592(da1469x):
             cs += ph
             print(hex(len(cs)))
             logging.info("[DA14592] Program cs script and product headers")
+            self.link.reset()
+            self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
+            self.link.wr_mem(
+                16,
+                self.SYS_CTRL_REG,
+                self.SYS_CTRL_REG_RESET_VAL | self.SYS_CTRL_REG_SW_RESET_MSK,
+            )
+            self.link.reset()
             self.flash_program_data(cs, 0x0)
         logging.info("[DA14592] Program success")
         return 1
