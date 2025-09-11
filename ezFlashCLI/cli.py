@@ -411,7 +411,9 @@ class ezFlashCLI:
             device: device name (string)
         """
         assert sbdev  # appease Flake8
-        self.da = eval("sbdev.{}".format(device))()
+        if not hasattr(sbdev, device):
+            raise Exception(f"cannot find device interface class `{device}'")
+        self.da = getattr(sbdev, device)()
         if self.link.iphost:
             self.da.link.iphost = self.link.iphost
 
