@@ -1854,8 +1854,8 @@ class da1470x(da1469x):
         return True
 
 
-class da14592(da1469x):
-    """Derived class for the da1470x devices."""
+class da1459x(da1469x):
+    """Derived class for the da1459x devices."""
 
     QPSPIC_BASE = 0xA00000
     PRODUCT_HEADER_SIZE = 0x500
@@ -1871,15 +1871,19 @@ class da14592(da1469x):
     HW_FCU_FLASH_ACCESS_MODE_READ = 0x0
     HW_FCU_FLASH_ACCESS_MODE_WRITE_ERASE = 0x8
 
+    WATCHDOG_REG = 0x50000700
     SYS_CTRL_REG = 0x50000024
-    SYS_CTRL_REG_RESET_VAL = 0xA0
+    SYS_CTRL_REG_RESET_VAL = 0x00A0
 
     def __init__(self):
         """Initalizate the da14xxxx parent devices class."""
+        # NOTE: this value is passed to JLink, which makes a distinction
+        # between the DA14592 and 594. With regards to flashing they are
+        # identical, so this shouldn't matter
         da1469x.__init__(self, b"DA14592")
 
     def flash_probe(self):
-        """Return dummy value for DA14592."""
+        """Return dummy value for DA1459x."""
         return (1, 2, 3)
 
     def flash_hw_qspi_cs_enable(self):
@@ -1976,7 +1980,14 @@ class da14592(da1469x):
         _592_DEFAULT_IMAGE_OFFSET = 0x400
         if fileData[:4] == b"\xA5\xA5\xA5\xA5":
             self.log.info("Program image")
+            self.link.reset()
+            self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
             self.flash_program_data(fileData, 0x0)
+            # set the watchdog timer to 0 to cause a reset (regular reset
+            # doesn't seem to work here for some reason)
+            self.link.reset()
+            self.link.wr_mem(16, self.WATCHDOG_REG, 0)
+            self.link.go()
         else:
             if fileData[:2] != b"Qq":
                 self.log.info("Add image header")
@@ -2016,6 +2027,14 @@ class da14592(da1469x):
             cs += ph
             print(hex(len(cs)))
             self.log.info("Program cs script and product headers")
+            self.link.reset()
+            self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
+            self.link.wr_mem(
+                16,
+                self.SYS_CTRL_REG,
+                self.SYS_CTRL_REG_RESET_VAL | self.SYS_CTRL_REG_SW_RESET_MSK,
+            )
+            self.link.reset()
             self.flash_program_data(cs, 0x0)
         self.log.info("Program success")
         return 1
