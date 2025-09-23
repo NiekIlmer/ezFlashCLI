@@ -96,9 +96,11 @@ class da14xxx:
         self.polling_interval = 0.01
         self.wait_timeout = 30
 
+        self.log = logging.getLogger(self.__class__.__name__)
+
         self.link = pyjlink()
         if device:
-            logging.debug("Set device to {}".format(device))
+            self.log.debug("Set device to {}".format(device.decode("utf-8")))
             self.link.Device = device
         self.link.init()
 
@@ -142,17 +144,17 @@ class da14xxx:
 
     def otp_read(self, key):
         """Fallback function for OTP read."""
-        logging.error("OTP not implemented for this device")
+        self.log.error("OTP not implemented for this device")
         return 0, -9
 
     def otp_write(self, key, values, force):
         """Fallback function for OTP write."""
-        logging.error("OTP not implemented for this device")
+        self.log.error("OTP not implemented for this device")
         return -9
 
     def otp_blank_check(self):
         """Fallback function for OTP blank check."""
-        logging.error("OTP not implemented for this device")
+        self.log.error("OTP not implemented for this device")
         sys.exit(1)
 
     def go(self):
@@ -316,7 +318,7 @@ class da1453x_da1458x(da14xxx):
         Args:
             None
         """
-        logging.debug("Disabling flash protection.")
+        self.log.debug("Disabling flash protection.")
         # reset and halt the cpu
         self.link.reset()
 
@@ -372,7 +374,7 @@ class da1453x_da1458x(da14xxx):
             address: start address to program
         """
         if fileData[0] != 0x70 or fileData[1] != 0x50:
-            logging.info("Not a bootable image")
+            self.log.info("Not a bootable image")
             if fileData[3] != 0x7:
                 print(
                     "This is not a binary with stack pointer at the beginning",
@@ -380,7 +382,7 @@ class da1453x_da1458x(da14xxx):
                 )
                 return 0
             else:
-                logging.info("append booting data")
+                self.log.info("append booting data")
                 header = b"\x70\x50\x00\x00\x00\x00" + struct.pack(">H", len(fileData))
 
                 data = header + fileData
@@ -395,7 +397,7 @@ class da1453x_da1458x(da14xxx):
         self.link.jl.JLINKARM_WriteMem(self.FLASH_ARRAY_BASE, len(data), c_char_p(data))
         bytes_flashed = self.link.jl.JLINKARM_EndDownload()
         if bytes_flashed < 0:
-            logging.error("Download failed with code: {}".format(bytes_flashed))
+            self.log.error("Download failed with code: {}".format(bytes_flashed))
             return 0
 
         # reset and halt the cpu
@@ -419,7 +421,7 @@ class da1453x_da1458x(da14xxx):
         )
         bytes_flashed = self.link.jl.JLINKARM_EndDownload()
         if bytes_flashed < 0:
-            logging.error(
+            self.log.error(
                 "Download failed with code: @address {}, {}".format(
                     address, bytes_flashed
                 )
@@ -484,7 +486,7 @@ class da1453x_da1458x(da14xxx):
         )
 
         if fileData[0] != 0x70 or fileData[1] != 0x51:
-            logging.info("Not a single image")
+            self.log.info("Not a single image")
             if fileData[3] != 0x7:
                 print(
                     "This is not a binary with stack pointer at the beginning",
@@ -492,7 +494,7 @@ class da1453x_da1458x(da14xxx):
                 )
                 return 0
             else:
-                logging.info("adding image header")
+                self.log.info("adding image header")
                 header = self.make_image_header(fileData)
                 data = header + fileData
         else:
@@ -500,27 +502,27 @@ class da1453x_da1458x(da14xxx):
             data = fileData
 
         if self.flash_program_data(product_header, product_header_position):
-            logging.info("Flash product header success")
+            self.log.info("Flash product header success")
         else:
-            logging.error("Flash product header failed")
+            self.log.error("Flash product header failed")
             return 0
 
         if self.flash_program_data(data, image1_address):
-            logging.info("Flash image success")
+            self.log.info("Flash image success")
         else:
-            logging.error("Flash image failed")
+            self.log.error("Flash image failed")
             return 0
 
         if self.flash_program_data(data, image2_address):
-            logging.info("Flash image success")
+            self.log.info("Flash image success")
         else:
-            logging.error("Flash image failed")
+            self.log.error("Flash image failed")
             return 0
         if self.flash_program_image(bootloader, parameters):
-            logging.info("Flash bootloader success")
+            self.log.info("Flash bootloader success")
             return 1
         else:
-            logging.error("Flash bootloader failed")
+            self.log.error("Flash bootloader failed")
             return 0
 
 
@@ -714,7 +716,7 @@ class da14531(da1453x_da1458x):
                 header_blank = False
                 break
         if header_blank is True:
-            logging.error(
+            self.log.error(
                 "The OTP header is blank, this shouldn't be possible. Please ensure the connection to the chip is correct"
             )
         return otp_blank
@@ -722,12 +724,12 @@ class da14531(da1453x_da1458x):
     def otp_read_raw(self, address, length=1):
         """Check if the program area of OTP is blank."""
         if address < 0:
-            logging.error("Address can't be negative")
+            self.log.error("Address can't be negative")
             return 0
         if (
             address >= self.OTP_SIZE and address < self.OTP_START
         ) or address >= self.OTP_SIZE + self.OTP_START:
-            logging.error("Address out of range")
+            self.log.error("Address out of range")
             return 0
         if address < self.OTP_SIZE:
             address += self.OTP_START
@@ -1259,7 +1261,7 @@ class da1468x_da1469x_da1470x(da14xxx):
         )
         bytes_flashed = self.link.jl.JLINKARM_EndDownload()
         if bytes_flashed < 0:
-            logging.error(
+            self.log.error(
                 "Download failed with code: @{:x} {}".format(
                     self.FLASH_ARRAY_BASE, bytes_flashed
                 )
@@ -1551,44 +1553,30 @@ class da1469x(da1468x_da1469x_da1470x):
             )
         self.link.reset()
         if fileData[:2] == b"Pp":
-            logging.info("[" + self.link.Device.decode("utf-8") + "] Program image")
+            self.log.info("Program image")
             self.flash_program_data(fileData, 0x0)
         else:
             if fileData[:2] != b"Qq":
-                logging.info(
-                    "[" + self.link.Device.decode("utf-8") + "] Add image header"
-                )
+                self.log.info("Add image header")
                 ih = self.make_image_header(fileData)
                 ih += b"\xFF" * (self.DEFAULT_IMAGE_OFFSET - len(ih))
                 fileData = ih + fileData
 
-            logging.info("[" + self.link.Device.decode("utf-8") + "] Program bin")
+            self.log.info("Program bin")
             active_fw_image_address = self.DEFAULT_IMAGE_ADDRESS
             if parameters["active_fw_image_address"] is not None:
                 if not self.check_address(parameters["active_fw_image_address"]):
-                    logging.error(
+                    self.log.error(
                         "active_fw_image_address out of range, it should be bigger than 0x2000 and the Firmware partition needs to start at an address which is a CACHE_FLASH_REG[FLASH_REGION_SIZE] multiple plus an offset of zero to three sectors"
                     )
                     return 0
                 active_fw_image_address = parameters["active_fw_image_address"]
             update_fw_image_address = active_fw_image_address
-            logging.debug(
-                "["
-                + self.link.Device.decode("utf-8")
-                + "] active_fw_image_address "
-                + str(active_fw_image_address)
-            )
-            logging.debug(
-                "["
-                + self.link.Device.decode("utf-8")
-                + "] update_fw_image_address "
-                + str(update_fw_image_address)
-            )
+            self.log.debug(f"active_fw_image_address {str(active_fw_image_address)}")
+            self.log.debug(f"update_fw_image_address {str(update_fw_image_address)}")
             self.flash_program_data(fileData, active_fw_image_address)
 
-            logging.info(
-                "[" + self.link.Device.decode("utf-8") + "] Program product header"
-            )
+            self.log.info("Program product header")
             ph = self.make_product_header(
                 parameters["flashid"],
                 active_fw_image_address=active_fw_image_address,
@@ -1596,7 +1584,7 @@ class da1469x(da1468x_da1469x_da1470x):
             )
             self.flash_program_data(ph, 0x0)
             self.flash_program_data(ph, 0x1000)
-        logging.info("[" + self.link.Device.decode("utf-8") + "] Program success")
+        self.log.info("Program success")
         return 1
 
     def otp_init(self):
@@ -1632,7 +1620,7 @@ class da1469x(da1468x_da1469x_da1470x):
                 self.OTP_CFG_SCRIPT_ENTRY_SIZE * 8, self.OTP_CFG_SCRIPT_ADDR + offset, 1
             )[0]
             if read != word:
-                logging.error(
+                self.log.error(
                     "OTP verify fail: mode {}, offset 0x{:x}, read 0x{:x}, written 0x{:x}".format(
                         mode, offset, read, word
                     )
@@ -1699,7 +1687,7 @@ class da1469x(da1468x_da1469x_da1470x):
             # Check for key
             if entry == key:
                 if key != 0xFFFFFFFF:
-                    logging.info(
+                    self.log.info(
                         "OTP key found at offset 0x{:x} with value 0x{:x}".format(
                             index * self.OTP_CFG_SCRIPT_ENTRY_SIZE, entries[index + 1]
                         )
@@ -1709,8 +1697,8 @@ class da1469x(da1468x_da1469x_da1470x):
             # Check for end of script
             if entry == 0xFFFFFFFF:
                 if count == 0:
-                    logging.info("OTP key not yet in script")
-                logging.info(
+                    self.log.info("OTP key not yet in script")
+                self.log.info(
                     "OTP write offset: 0x{:x}".format(
                         index * self.OTP_CFG_SCRIPT_ENTRY_SIZE
                     )
@@ -1719,10 +1707,10 @@ class da1469x(da1468x_da1469x_da1470x):
 
             # Check for stop command
             if entry == 0x00000000:
-                logging.info("OTP is locked")
+                self.log.info("OTP is locked")
                 return count, -2
 
-            logging.debug("OTP {}: {:x}".format(index, entry))
+            self.log.debug("OTP {}: {:x}".format(index, entry))
 
             # Decode entry and skip data values
             msb = (entry & 0xF0000000) >> 24
@@ -1738,7 +1726,7 @@ class da1469x(da1468x_da1469x_da1470x):
             else:  # REG ENTRIES OR XTAL TRIM
                 index += 2
 
-        logging.info("OTP is full")
+        self.log.info("OTP is full")
         return count, -1
 
     def otp_write(self, key, values, force):
@@ -1761,16 +1749,16 @@ class da1469x(da1468x_da1469x_da1470x):
 
         # Only write existing keys when forced
         if (count > 0) and not force:
-            logging.info(
+            self.log.info(
                 "OTP write skipped because key exists, use --force to override"
             )
             return 0
 
         # Write key with values
-        logging.info("OTP write key 0x{:x} with values: {}".format(key, values))
+        self.log.info("OTP write key 0x{:x} with values: {}".format(key, values))
         data = [key] + values
         if not self.otp_write_words(data, offset):
-            logging.error("OTP write error")
+            self.log.error("OTP write error")
             return -3
 
         return 0
@@ -1991,7 +1979,7 @@ class da1459x(da1469x):
         _592_DEFAULT_IMAGE_ADDRESS = 0x2000
         _592_DEFAULT_IMAGE_OFFSET = 0x400
         if fileData[:4] == b"\xA5\xA5\xA5\xA5":
-            logging.info("[DA14592] Program image")
+            self.log.info("Program image")
             self.link.reset()
             self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
             self.flash_program_data(fileData, 0x0)
@@ -2002,7 +1990,7 @@ class da1459x(da1469x):
             self.link.go()
         else:
             if fileData[:2] != b"Qq":
-                logging.info("[DA14592] Add image header")
+                self.log.info("Add image header")
                 ih = self.make_image_header(fileData)
                 ih += b"\xFF" * (_592_DEFAULT_IMAGE_OFFSET - len(ih))
                 fileData = ih + fileData
@@ -2010,19 +1998,15 @@ class da1459x(da1469x):
             active_fw_image_address = _592_DEFAULT_IMAGE_ADDRESS
             if parameters["active_fw_image_address"] is not None:
                 if not self.check_address(parameters["active_fw_image_address"]):
-                    logging.error(
+                    self.log.error(
                         "active_fw_image_address out of range, it should be bigger than 0x2000 and the Firmware partition needs to start at an address which is a CACHE_FLASH_REG[FLASH_REGION_SIZE] multiple plus an offset of zero to three sectors"
                     )
                     return 0
                 active_fw_image_address = parameters["active_fw_image_address"]
             update_fw_image_address = active_fw_image_address
-            logging.info("[DA14592] Program bin to 0x%X", active_fw_image_address)
-            logging.debug(
-                "[DA14592] active_fw_image_address " + str(active_fw_image_address)
-            )
-            logging.debug(
-                "[DA14592] update_fw_image_address " + str(update_fw_image_address)
-            )
+            self.log.info("Program bin to 0x%X", active_fw_image_address)
+            self.log.debug(f"active_fw_image_address {str(active_fw_image_address)}")
+            self.log.debug(f"update_fw_image_address {str(update_fw_image_address)}")
             self.flash_program_data(fileData, active_fw_image_address)
 
             ph = self.make_product_header(
@@ -2042,7 +2026,7 @@ class da1459x(da1469x):
             print(hex(len(cs)))
             cs += ph
             print(hex(len(cs)))
-            logging.info("[DA14592] Program cs script and product headers")
+            self.log.info("Program cs script and product headers")
             self.link.reset()
             self.link.wr_mem(16, self.SYS_CTRL_REG, self.SYS_CTRL_REG_RESET_VAL)
             self.link.wr_mem(
@@ -2052,7 +2036,7 @@ class da1459x(da1469x):
             )
             self.link.reset()
             self.flash_program_data(cs, 0x0)
-        logging.info("[DA14592] Program success")
+        self.log.info("Program success")
         return 1
 
 
@@ -2096,10 +2080,10 @@ class da1468x(da1468x_da1469x_da1470x):
             flashid: unused
         """
         if fileData[:2] == b"qQ":
-            logging.info("[DA1468x] Program image")
+            self.log.info("Program image")
             data = fileData
         else:
-            logging.info("[DA1468x] Program binary")
+            self.log.info("Program binary")
             data = (
                 b"qQ\x00\x00\x80\x00"
                 + struct.pack(">H", (len(fileData) - 8) & 0xFFFF)
@@ -2108,7 +2092,7 @@ class da1468x(da1468x_da1469x_da1470x):
             )
 
         self.flash_program_data(data, 0x0)
-        logging.info("[DA1468x] Program success")
+        self.log.info("Program success")
         return 1
 
 

@@ -53,11 +53,16 @@ class ezFlashCLI:
 
             json_file.close()
 
+        log_config = {
+            "level": logging.INFO,
+            "format": "%(levelname)s [%(name)s] %(message)s",
+        }
+
         # set the verbosity
         if self.args.verbose:
-            logging.basicConfig(level=logging.DEBUG)
-        else:
-            logging.basicConfig(level=logging.INFO)
+            log_config["level"] = logging.DEBUG
+
+        logging.basicConfig(**log_config)
 
         logging.info("{} v{}".format(self.__class__.__name__, __version__))
         logging.info("By using the program you accept the SEGGER J-link™ license")
